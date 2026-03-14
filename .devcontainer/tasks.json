@@ -1,0 +1,61 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    // ── Tarefa padrão (Ctrl+Shift+B) ─────────────────────────────────────
+    {
+      "label": "spin watch",
+      "type": "shell",
+      "command": "spin watch",
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": { "regexp": "^error(\\[.*\\])?: (.*)$", "message": 2 },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern":  "Building",
+          "endsPattern":    "Serving"
+        }
+      }
+    },
+ 
+    // ── Build release ─────────────────────────────────────────────────────
+    {
+      "label": "cargo build (release)",
+      "type": "shell",
+      "command": "cargo build --target wasm32-wasip1 --release",
+      "group": "build",
+      "problemMatcher": "$rustc"
+    },
+ 
+    // ── Clippy ────────────────────────────────────────────────────────────
+    {
+      "label": "cargo clippy",
+      "type": "shell",
+      "command": "cargo clippy --target wasm32-wasip1 -- -D warnings",
+      "group": "test",
+      "problemMatcher": "$rustc"
+    },
+ 
+    // ── Fmt ───────────────────────────────────────────────────────────────
+    {
+      "label": "cargo fmt",
+      "type": "shell",
+      "command": "cargo fmt --all",
+      "group": "build"
+    },
+ 
+    // ── Audit ─────────────────────────────────────────────────────────────
+    {
+      "label": "cargo audit",
+      "type": "shell",
+      "command": "cargo audit",
+      "group": "test"
+    }
+  ]
+}
+ 

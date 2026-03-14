@@ -1,0 +1,52 @@
+{
+  // ── Imagem base ──────────────────────────────────────────────────────────
+  // mcr.microsoft.com/devcontainers/rust:1-bookworm já inclui:
+  //   • Rust stable + rustup + cargo
+  //   • git, curl, build-essential, ca-certificates
+  //   • usuário não-root "vscode"
+  //
+  // NÃO usamos o bloco "features" para Rust aqui — a feature
+  // ghcr.io/devcontainers/features/rust tenta baixar do GitHub Container
+  // Registry e dá timeout em redes corporativas/VPN/Windows.
+  // O target wasm32-wasip1 e o Spin CLI são instalados pelo setup.sh.
+  "image": "mcr.microsoft.com/devcontainers/rust:1-bookworm",
+
+  "name": "cardapio-geo-api",
+
+  // ── Extensões do VS Code instaladas automaticamente ───────────────────────
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "vadimcn.vscode-lldb",
+        "tamasfe.even-better-toml",
+        "serayuzgur.crates",
+        "usernamehw.errorlens",
+        "fill-labs.dependi"
+      ],
+      "settings": {
+        "rust-analyzer.check.command": "clippy",
+        "editor.formatOnSave": true,
+        "[rust]": {
+          "editor.defaultFormatter": "rust-lang.rust-analyzer"
+        }
+      }
+    }
+  },
+
+  // ── Porta exposta pelo Spin ───────────────────────────────────────────────
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": {
+      "label": "geo-api (Spin)",
+      "onAutoForward": "notify"
+    }
+  },
+
+  // ── Provisionamento: roda UMA VEZ após criar o container ─────────────────
+  // Instala wasm32-wasip1, Spin CLI, cargo tools e git hook.
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+
+  // ── Usuário não-root ──────────────────────────────────────────────────────
+  "remoteUser": "vscode"
+}

@@ -1,0 +1,46 @@
+spin_manifest_version = 2
+
+[application]
+name        = "cardapio-geo-api"
+version     = "0.1.0"
+description = "Proxy OSM geocoding + OSRM routing filtrado para Alagoas, BR"
+
+# ── Variáveis configuráveis em runtime ───────────────────────────────────────
+#
+# Podem ser sobrescritas por variável de ambiente com prefixo SPIN_VARIABLE_:
+#   export SPIN_VARIABLE_OSRM_BASE="http://localhost:5000/route/v1/driving"
+#
+# No docker-compose, o serviço geo passa:
+#   environment:
+#     SPIN_VARIABLE_OSRM_BASE: http://osrm:5000/route/v1/driving
+[variables]
+osrm_base = { default = "https://router.project-osrm.org/route/v1/driving" }
+
+# ── Componente HTTP ───────────────────────────────────────────────────────────
+[[trigger.http]]
+route     = "/..."
+component = "geo"
+
+[component.geo]
+source = "target/wasm32-wasip1/release/cardapio_geo_api.wasm"
+
+# Allowlist de hosts externos — obrigatória no Spin.
+# Inclui os três cenários possíveis de OSRM:
+#   • router.project-osrm.org → API pública (padrão / fallback)
+#   • osrm:5000               → self-hosted via docker compose (nome do serviço)
+#   • localhost:5000           → self-hosted direto no dev container
+allowed_outbound_hosts = [
+  "https://nominatim.openstreetmap.org",
+  "https://router.project-osrm.org",
+  "http://osrm:5000",
+  "http://localhost:5000",
+]
+
+# Passa a variável osrm_base para o componente
+[component.geo.variables]
+osrm_base = "{{ osrm_base }}"
+
+# ── Build ─────────────────────────────────────────────────────────────────────
+[component.geo.build]
+command = "cargo build --target wasm32-wasip1 --release"
+watch   = ["src/**/*.rs", "Cargo.toml"]

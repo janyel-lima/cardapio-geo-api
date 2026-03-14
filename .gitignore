@@ -1,0 +1,4 @@
+/target
+Cargo.lock   # lib crates não commitam lock — binários/apps commitam
+.env
+*.wasm       # não commita o binário compilado

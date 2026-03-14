@@ -1,0 +1,95 @@
+# ── cardapio-geo-api — stack completa ────────────────────────────────────────
+#
+# Serviços:
+#   osrm      → servidor de rotas com dados do Nordeste (self-hosted)
+#   geo-api   → componente Spin (geocoding + proxy OSRM)
+#
+# PRIMEIRO USO — prepara os dados do OSRM (roda uma vez, ~10 min):
+#   docker compose --profile prepare up osrm-prepare
+#
+# USO NORMAL — sobe tudo:
+#   docker compose up -d --build
+#
+# A API ficará em http://localhost:3000
+
+services:
+
+  # ── OSRM: pré-processamento (roda uma vez) ──────────────────────────────
+  # Profile "prepare" — não sobe com `docker compose up` normal.
+  # Faz: download do PBF → extract → partition → customize
+  # Os dados ficam no volume "osrm-data" e o serviço de rota os reutiliza.
+  osrm-prepare:
+    image: osrm/osrm-backend:latest
+    profiles: [prepare]
+    volumes:
+      - osrm-data:/data
+    environment:
+      # Extrato do Nordeste (~120 MB, inclui Alagoas).
+      # Troque por nordeste-latest.osm.pbf se já tiver o arquivo local.
+      PBF_URL: https://download.geofabrik.de/south-america/brazil/nordeste-latest.osm.pbf
+    entrypoint: >
+      bash -c "
+        set -e
+        PBF=/data/nordeste-latest.osm.pbf
+
+        if [ ! -f $$PBF ]; then
+          echo '→ Baixando extrato do Nordeste…'
+          wget -q --show-progress -O $$PBF $$PBF_URL
+        else
+          echo '→ PBF já existe, pulando download.'
+        fi
+
+        if [ ! -f /data/nordeste-latest.osrm ]; then
+          echo '→ osrm-extract…'
+          osrm-extract -p /opt/car.lua $$PBF
+
+          echo '→ osrm-partition…'
+          osrm-partition /data/nordeste-latest.osrm
+
+          echo '→ osrm-customize…'
+          osrm-customize /data/nordeste-latest.osrm
+        else
+          echo '→ Dados já processados, pulando.'
+        fi
+
+        echo ''
+        echo '✅  OSRM pronto. Suba o serviço principal com:'
+        echo '    docker compose up -d'
+      "
+
+  # ── OSRM: servidor de rotas ─────────────────────────────────────────────
+  osrm:
+    image: osrm/osrm-backend:latest
+    restart: unless-stopped
+    volumes:
+      - osrm-data:/data
+    command: >
+      osrm-routed
+        --algorithm mld
+        --max-table-size 1000
+        /data/nordeste-latest.osrm
+    ports:
+      - "5000:5000"   # expõe localmente para testes diretos se necessário
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Spin: geo-api ───────────────────────────────────────────────────────
+  geo-api:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Aponta para o serviço osrm acima (nome do serviço = hostname na rede Docker)
+      SPIN_VARIABLE_OSRM_BASE: http://osrm:5000/route/v1/driving
+    depends_on:
+      osrm:
+        condition: service_healthy
+
+# ── Volume compartilhado entre osrm-prepare e osrm ─────────────────────────
+volumes:
+  osrm-data:
