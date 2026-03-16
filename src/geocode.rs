@@ -1,30 +1,26 @@
 /// GET /geocode?q=<query>[&limit=<1-10>]
 ///
 /// Proxy para o Nominatim OSM com `viewbox` fixado em Alagoas.
-/// Retorna array compatível com Nominatim jsonv2 — funciona como drop-in
-/// para o plugin Leaflet.Geocoder e para qualquer código que já leia
-/// `results[i].lat / .lon / .display_name / .address`.
-///
-/// Campos extras adicionados em cada resultado:
-///   - `within_alagoas`  {bool}  coordenada dentro da bbox do estado
-///   - `within_region`   {bool}  dentro da bbox estendida (fronteiras)
+/// Retorna array compatível com Nominatim jsonv2.
 
 use anyhow::Context;
 use spin_sdk::http::{Method, Request, Response, send};
 
 use crate::bounds;
-use crate::helpers::{error_json, json_ok, parse_qs, require_str};
+use crate::errors::ApiError;
+use crate::helpers::{json_ok, parse_qs, require_str};
 
 /// User-Agent exigido pela política de uso do Nominatim.
-const USER_AGENT: &str = "cardapio-geo-api/0.1 (https://github.com/seu-usuario/cardapio-geo-api)";
+const USER_AGENT: &str =
+    "cardapio-geo-api/0.1 (https://github.com/seu-usuario/cardapio-geo-api)";
 
-pub async fn handle(query: &str) -> anyhow::Result<Response> {
+pub async fn handle(query: &str) -> Result<Response, ApiError> {
     let qs = parse_qs(query);
 
     // ── Parâmetros ────────────────────────────────────────────────────────
     let q = match require_str(&qs, "q") {
         Ok(v) if !v.trim().is_empty() => v.to_string(),
-        _ => return Ok(error_json(400, "parâmetro 'q' ausente ou vazio")),
+        _ => return Err(ApiError::bad_request("parâmetro 'q' ausente ou vazio")),
     };
 
     let limit: u8 = qs
@@ -35,13 +31,7 @@ pub async fn handle(query: &str) -> anyhow::Result<Response> {
         .max(1);
 
     // ── Monta URL do Nominatim ────────────────────────────────────────────
-    //
-    // viewbox  → prioriza Alagoas (bounded=0 permite resultados fora se não houver match)
-    // countrycodes=br → limita ao Brasil
-    // addressdetails=1 → inclui objeto `address` com campos estruturados
-    // format=jsonv2    → resposta mais rica (inclui place_rank, importance, etc.)
-    let viewbox = bounds::ALAGOAS.as_viewbox(); // west,south,east,north
-
+    let viewbox = bounds::ALAGOAS.as_viewbox();
     let url = format!(
         "https://nominatim.openstreetmap.org/search\
          ?q={q}\
@@ -52,8 +42,8 @@ pub async fn handle(query: &str) -> anyhow::Result<Response> {
          &viewbox={viewbox}\
          &bounded=0\
          &accept-language=pt-BR,pt,en",
-        q      = urlencode(&q),
-        limit  = limit,
+        q = urlencode(&q),
+        limit = limit,
         viewbox = urlencode(&viewbox),
     );
 
@@ -68,37 +58,41 @@ pub async fn handle(query: &str) -> anyhow::Result<Response> {
 
     let upstream_resp: spin_sdk::http::Response = send(upstream_req)
         .await
-        .context("falha ao contactar Nominatim")?;
+        .context("falha ao contactar Nominatim")
+        .map_err(|e| ApiError::bad_gateway("nominatim", e.to_string()))?;
 
     if *upstream_resp.status() != 200 {
-        return Ok(error_json(
-            502,
-            &format!("Nominatim retornou status {}", upstream_resp.status()),
+        return Err(ApiError::bad_gateway(
+            "nominatim",
+            format!("status HTTP {}", upstream_resp.status()),
         ));
     }
 
     // ── Parseia e enriquece resultados ────────────────────────────────────
     let raw = std::str::from_utf8(upstream_resp.body())
-        .context("resposta do Nominatim não é UTF-8")?;
+        .context("resposta do Nominatim não é UTF-8")
+        .map_err(ApiError::from)?;
 
-    let mut results: Vec<serde_json::Value> =
-        serde_json::from_str(raw).context("resposta do Nominatim inválida")?;
+    let mut results: Vec<serde_json::Value> = serde_json::from_str(raw)
+        .context("resposta do Nominatim inválida")
+        .map_err(ApiError::from)?;
 
-    // Adiciona campos `within_alagoas` e `within_region` em cada resultado.
     for item in &mut results {
+        // Nota: anotações explícitas necessárias — o compilador não infere o
+        // tipo de `v` em `and_then` quando o contexto externo ainda é ambíguo.
         if let (Some(lat_str), Some(lon_str)) = (
-            item.get("lat").and_then(|v| v.as_str()),
-            item.get("lon").and_then(|v| v.as_str()),
+            item.get("lat").and_then(|v: &serde_json::Value| v.as_str()),
+            item.get("lon").and_then(|v: &serde_json::Value| v.as_str()),
         ) {
             if let (Ok(lat), Ok(lon)) = (lat_str.parse::<f64>(), lon_str.parse::<f64>()) {
                 let (in_al, in_ext) = bounds::classify(lat, lon);
                 item["within_alagoas"] = serde_json::Value::Bool(in_al);
-                item["within_region"]  = serde_json::Value::Bool(in_ext);
+                item["within_region"] = serde_json::Value::Bool(in_ext);
             }
         }
     }
 
-    let body = serde_json::to_string(&results)?;
+    let body = serde_json::to_string(&results).map_err(anyhow::Error::from)?;
     Ok(json_ok(body))
 }
 
@@ -107,8 +101,7 @@ fn urlencode(s: &str) -> String {
     let mut out = String::with_capacity(s.len() * 2);
     for c in s.chars() {
         match c {
-            'A'..='Z' | 'a'..='z' | '0'..='9'
-            | '-' | '_' | '.' | '~' | ',' => out.push(c),
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' | ',' => out.push(c),
             ' ' => out.push('+'),
             c => {
                 let mut buf = [0u8; 4];

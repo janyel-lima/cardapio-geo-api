@@ -1,19 +1,10 @@
 {
-  // ── Imagem base ──────────────────────────────────────────────────────────
-  // mcr.microsoft.com/devcontainers/rust:1-bookworm já inclui:
-  //   • Rust stable + rustup + cargo
-  //   • git, curl, build-essential, ca-certificates
-  //   • usuário não-root "vscode"
-  //
-  // NÃO usamos o bloco "features" para Rust aqui — a feature
-  // ghcr.io/devcontainers/features/rust tenta baixar do GitHub Container
-  // Registry e dá timeout em redes corporativas/VPN/Windows.
-  // O target wasm32-wasip1 e o Spin CLI são instalados pelo setup.sh.
+  // Modo "image" — simples e confiável.
+  // O OSRM roda como stack Docker separada (docker-compose.osrm.yml).
+  // O devcontainer acessa via host.docker.internal:5000, que no
+  // Docker Desktop (Windows e Mac) sempre resolve para o host.
   "image": "mcr.microsoft.com/devcontainers/rust:1-bookworm",
-
   "name": "cardapio-geo-api",
-
-  // ── Extensões do VS Code instaladas automaticamente ───────────────────────
   "customizations": {
     "vscode": {
       "extensions": [
@@ -25,7 +16,15 @@
         "fill-labs.dependi"
       ],
       "settings": {
+        "rust-analyzer.cargo.target": "wasm32-wasip1",
         "rust-analyzer.check.command": "clippy",
+        "rust-analyzer.check.extraArgs": [
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "rust-analyzer.inlayHints.parameterHints.enable": true,
+        "rust-analyzer.inlayHints.typeHints.enable": true,
         "editor.formatOnSave": true,
         "[rust]": {
           "editor.defaultFormatter": "rust-lang.rust-analyzer"
@@ -33,20 +32,21 @@
       }
     }
   },
-
-  // ── Porta exposta pelo Spin ───────────────────────────────────────────────
-  "forwardPorts": [3000],
+  "forwardPorts": [
+    3000
+  ],
   "portsAttributes": {
     "3000": {
       "label": "geo-api (Spin)",
       "onAutoForward": "notify"
     }
   },
-
-  // ── Provisionamento: roda UMA VEZ após criar o container ─────────────────
-  // Instala wasm32-wasip1, Spin CLI, cargo tools e git hook.
+  // Aponta spin para o OSRM rodando no host via Docker Desktop.
+  // host.docker.internal é injetado automaticamente pelo Docker Desktop
+  // em Windows e Mac — não precisa de configuração extra.
+  "remoteEnv": {
+    "SPIN_VARIABLE_OSRM_BASE": "http://localhost:5000/route/v1/driving"
+  },
   "postCreateCommand": "bash .devcontainer/setup.sh",
-
-  // ── Usuário não-root ──────────────────────────────────────────────────────
   "remoteUser": "vscode"
 }

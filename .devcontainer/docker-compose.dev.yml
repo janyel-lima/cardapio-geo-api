@@ -1,0 +1,56 @@
+# .devcontainer/docker-compose.dev.yml
+
+services:
+
+  # ── Desativa geo-api em dev ───────────────────────────────────────────────
+  # Sem isso o Dev Containers tenta buildar o Dockerfile ao iniciar.
+  # Em dev você roda `spin watch` dentro do devcontainer.
+  geo-api:
+    image: busybox
+    profiles: [prod]
+
+  # ── Desativa osrm-download em dev ────────────────────────────────────────
+  # O download é disparado automaticamente em prod pelo depends_on do osrm.
+  # Em dev, se você precisar dos dados rode `make osrm-prepare` manualmente.
+  # Sem este override o osrm-download tentaria subir junto com o devcontainer.
+  osrm-download:
+    profiles: [prod]
+
+  # ── OSRM com entrypoint tolerante a dados ausentes ───────────────────────
+  # Sobrescreve o entrypoint do compose raiz: em vez de tentar processar
+  # e servir de uma vez, detecta se os dados existem e dorme se não existirem.
+  # Isso evita crash em loop quando o volume ainda está vazio.
+  osrm:
+    depends_on: {}
+    entrypoint:
+      - bash
+      - -c
+      - |
+        OSRM="/data/nordeste-latest.osrm"
+        if [ ! -f "$$OSRM" ]; then
+          echo "╔══════════════════════════════════════════════════════╗"
+          echo "║  OSRM: dados não encontrados                         ║"
+          echo "║  Fora do VS Code, rode:  make osrm-prepare           ║"
+          echo "║  Depois, no terminal do container: make osrm-restart ║"
+          echo "╚══════════════════════════════════════════════════════╝"
+          exec sleep infinity
+        fi
+        echo "→ Dados encontrados — iniciando servidor..."
+        exec osrm-routed --algorithm mld --max-table-size 1000 "$$OSRM"
+
+  # ── Devcontainer ──────────────────────────────────────────────────────────
+  devcontainer:
+    image: mcr.microsoft.com/devcontainers/rust:1-bookworm
+    volumes:
+      - cargo-registry:/home/vscode/.cargo/registry
+      - cargo-git:/home/vscode/.cargo/git
+      - cargo-target:/workspaces/cardapio-geo-api/target
+    command: sleep infinity
+    environment:
+      SPIN_VARIABLE_OSRM_BASE: http://osrm:5000/route/v1/driving
+    user: vscode
+
+volumes:
+  cargo-registry:
+  cargo-git:
+  cargo-target:

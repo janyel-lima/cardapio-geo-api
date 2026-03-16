@@ -1,0 +1,5 @@
+[geo-api] erro interno em /route: upstream osrm falhou: falha ao contactar OSRM
+[geo-api] erro interno em /route: upstream osrm falhou: falha ao contactar OSRM
+[geo-api] erro interno em /route: upstream osrm falhou: falha ao contactar OSRM
+[geo-api] erro interno em /route: upstream osrm falhou: falha ao contactar OSRM
+[geo-api] erro interno em /route: upstream osrm falhou: falha ao contactar OSRM

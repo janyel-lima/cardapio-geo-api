@@ -1,6 +1,7 @@
-use spin_sdk::http::{IntoResponse, Method, Request};
+use spin_sdk::http::{IntoResponse, Method, Request, Response};
 
 mod bounds;
+mod errors;
 mod geocode;
 mod helpers;
 mod reverse;
@@ -18,44 +19,42 @@ async fn handle(req: Request) -> anyhow::Result<impl IntoResponse> {
         return Ok(helpers::error_json(405, "método não permitido — use GET"));
     }
 
-    // ── Parseia path e query da URI ───────────────────────────────────────
-    // req.uri() pode retornar a URL completa (http://host/path?query)
-    // ou só o path (/path?query) dependendo do cliente.
-    // Isolamos sempre só o path + query removendo scheme://host se presentes.
+    // ── Isola path + query da URI ─────────────────────────────────────────
+    // req.uri() pode vir como URL completa (http://host/path?q) ou só path.
     let uri = req.uri();
-
-    // Remove scheme://host se existir: "http://127.0.0.1:3000/route?x=1" → "/route?x=1"
     let path_and_query = if let Some(after_scheme) = uri.find("://") {
-        // pula "://" e avança até a próxima '/' (início do path)
         let after_host = &uri[after_scheme + 3..];
         match after_host.find('/') {
             Some(i) => &after_host[i..],
-            None    => "/",
+            None => "/",
         }
     } else {
-        uri  // já é só path
+        uri
     };
 
-    // Separa path de query string pelo primeiro '?'
     let (path, query) = match path_and_query.find('?') {
         Some(i) => (&path_and_query[..i], &path_and_query[i + 1..]),
-        None    => (path_and_query, ""),
+        None => (path_and_query, ""),
     };
 
     // ── Roteamento ────────────────────────────────────────────────────────
-    let result = match path {
+    // Handlers retornam Result<Response, ApiError>.
+    // Erros de servidor são logados; erros de cliente (4xx) são silenciosos.
+    let result: Result<Response, errors::ApiError> = match path {
         "/geocode" => geocode::handle(query).await,
         "/reverse" => reverse::handle(query).await,
-        "/route"   => route::handle(query).await,
-        "/health"  => Ok(helpers::health()),
-        other      => Ok(helpers::not_found(other)),
+        "/route" => route::handle(query).await,
+        "/health" => return Ok(helpers::health()),
+        other => return Ok(helpers::not_found(other)),
     };
 
-    match result {
-        Ok(resp) => Ok(resp),
-        Err(err) => {
-            eprintln!("[cardapio-geo-api] erro interno: {:#}", err);
-            Ok(helpers::error_json(500, &err.to_string()))
+    Ok(match result {
+        Ok(resp) => resp,
+        Err(e) => {
+            if e.is_server_error() {
+                eprintln!("[geo-api] erro interno em {path}: {e:#}");
+            }
+            Response::from(e)
         }
-    }
+    })
 }

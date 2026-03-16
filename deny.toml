@@ -1,0 +1,68 @@
+# cargo-deny — política de dependências
+# Docs: https://embarkstudios.github.io/cargo-deny/
+
+# ── Advisories (CVEs) ────────────────────────────────────────────────────────
+[advisories]
+# Falha no CI se qualquer dep tiver CVE ativa sem ignore explícito
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+vulnerability = "deny"
+unmaintained = "warn"   # warn, não deny — deps WASI são às vezes arquivadas
+yanked = "deny"
+notice = "warn"
+ignore = [
+    # Adicione IDs aqui somente após análise: "RUSTSEC-YYYY-NNNN"
+]
+
+# ── Licenças ─────────────────────────────────────────────────────────────────
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+]
+deny = [
+    "GPL-2.0",
+    "GPL-3.0",
+    "AGPL-3.0",
+    "LGPL-2.0",
+    "LGPL-2.1",
+    "LGPL-3.0",
+]
+# Algumas crates usam licenças não-SPDX — lista-branca por nome
+exceptions = [
+    # Exemplo: { allow = ["LicenseRef-scancode-unknown-license-reference"], name = "some-crate" }
+]
+copyleft = "warn"
+
+# ── Bans (versões duplicadas / crates proibidas) ──────────────────────────────
+[bans]
+# warn em vez de deny — o ecossistema WASM ainda tem deps duplicadas legítimas
+multiple-versions = "warn"
+wildcards = "deny"   # proíbe versões "^*" em Cargo.toml
+
+# Crates que não devem entrar no projeto
+deny = [
+    # { name = "openssl" } # se quiser forçar rustls
+]
+
+# Permite múltiplas versões de crates que o ecossistema wasm ainda não unificou
+skip = [
+    { name = "syn" },           # syn 1.x e 2.x coexistem por proc-macros legadas
+    { name = "wasm-encoder" },  # wit-component usa versão diferente do wit-bindgen
+    { name = "wasmparser" },
+]
+
+# ── Fontes ───────────────────────────────────────────────────────────────────
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

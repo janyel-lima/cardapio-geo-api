@@ -1,95 +1,117 @@
-# ── cardapio-geo-api — stack completa ────────────────────────────────────────
+# docker-compose.yml
+#
+# Dev:  lido junto com .devcontainer/docker-compose.dev.yml pelo VS Code
+# Prod: docker compose up -d --build
 #
 # Serviços:
-#   osrm      → servidor de rotas com dados do Nordeste (self-hosted)
-#   geo-api   → componente Spin (geocoding + proxy OSRM)
-#
-# PRIMEIRO USO — prepara os dados do OSRM (roda uma vez, ~10 min):
-#   docker compose --profile prepare up osrm-prepare
-#
-# USO NORMAL — sobe tudo:
-#   docker compose up -d --build
-#
-# A API ficará em http://localhost:3000
+#   osrm-download  → baixa o PBF (alpine tem wget nativo via busybox)
+#   osrm           → processa os dados se necessário e serve rotas
+#   geo-api        → API Spin
 
 services:
 
-  # ── OSRM: pré-processamento (roda uma vez) ──────────────────────────────
-  # Profile "prepare" — não sobe com `docker compose up` normal.
-  # Faz: download do PBF → extract → partition → customize
-  # Os dados ficam no volume "osrm-data" e o serviço de rota os reutiliza.
-  osrm-prepare:
-    image: osrm/osrm-backend:latest
-    profiles: [prepare]
+  # ── Download do PBF ───────────────────────────────────────────────────────
+  # Usa alpine — tem wget via busybox, sem precisar instalar nada.
+  # Só roda uma vez: se o PBF já existir no volume, sai imediatamente.
+  # O serviço "osrm" só inicia depois que este terminar com sucesso.
+  osrm-download:
+    image: alpine:3.19
+    restart: "no"
     volumes:
       - osrm-data:/data
     environment:
-      # Extrato do Nordeste (~120 MB, inclui Alagoas).
-      # Troque por nordeste-latest.osm.pbf se já tiver o arquivo local.
       PBF_URL: https://download.geofabrik.de/south-america/brazil/nordeste-latest.osm.pbf
-    entrypoint: >
-      bash -c "
-        set -e
-        PBF=/data/nordeste-latest.osm.pbf
-
-        if [ ! -f $$PBF ]; then
-          echo '→ Baixando extrato do Nordeste…'
-          wget -q --show-progress -O $$PBF $$PBF_URL
-        else
-          echo '→ PBF já existe, pulando download.'
+    command:
+      - sh
+      - -c
+      - |
+        PBF="/data/nordeste-latest.osm.pbf"
+        if [ -f "$$PBF" ]; then
+          echo "→ PBF já existe, pulando download."
+          exit 0
         fi
+        echo "→ Baixando extrato do Nordeste (~120 MB)…"
+        wget -O "$$PBF.tmp" "$$PBF_URL" && mv "$$PBF.tmp" "$$PBF" || {
+          rm -f "$$PBF.tmp"
+          echo "✗ Download falhou."
+          exit 1
+        }
+        echo "✅ Download concluído."
 
-        if [ ! -f /data/nordeste-latest.osrm ]; then
-          echo '→ osrm-extract…'
-          osrm-extract -p /opt/car.lua $$PBF
-
-          echo '→ osrm-partition…'
-          osrm-partition /data/nordeste-latest.osrm
-
-          echo '→ osrm-customize…'
-          osrm-customize /data/nordeste-latest.osrm
-        else
-          echo '→ Dados já processados, pulando.'
-        fi
-
-        echo ''
-        echo '✅  OSRM pronto. Suba o serviço principal com:'
-        echo '    docker compose up -d'
-      "
-
-  # ── OSRM: servidor de rotas ─────────────────────────────────────────────
+  # ── Servidor de rotas ─────────────────────────────────────────────────────
+  # Processa os dados na primeira execução (extract → partition → customize),
+  # depois serve normalmente. As execuções seguintes detectam os dados prontos
+  # e iniciam em segundos.
+  #
+  # Separar download e processamento em serviços distintos é necessário porque
+  # a imagem osrm/osrm-backend não tem wget nem curl.
   osrm:
     image: osrm/osrm-backend:latest
     restart: unless-stopped
     volumes:
       - osrm-data:/data
-    command: >
-      osrm-routed
-        --algorithm mld
-        --max-table-size 1000
-        /data/nordeste-latest.osrm
+    depends_on:
+      osrm-download:
+        condition: service_completed_successfully
+    entrypoint:
+      - bash
+      - -c
+      - |
+        set -euo pipefail
+        PBF="/data/nordeste-latest.osm.pbf"
+        OSRM="/data/nordeste-latest.osrm"
+
+        if [ ! -f "$$OSRM" ]; then
+          echo "╔══════════════════════════════════════════════════╗"
+          echo "║  OSRM: processando dados (só acontece uma vez)   ║"
+          echo "║  extract → partition → customize  (~5-10 min)    ║"
+          echo "╚══════════════════════════════════════════════════╝"
+
+          echo "→ osrm-extract…"
+          osrm-extract -p /opt/car.lua "$$PBF"
+
+          echo "→ osrm-partition…"
+          osrm-partition "$$OSRM"
+
+          echo "→ osrm-customize…"
+          osrm-customize "$$OSRM"
+
+          echo "✅ Dados prontos — iniciando servidor…"
+        else
+          echo "→ Dados encontrados — iniciando servidor…"
+        fi
+
+        exec osrm-routed \
+          --algorithm mld \
+          --max-table-size 1000 \
+          "$$OSRM"
     ports:
-      - "5000:5000"   # expõe localmente para testes diretos se necessário
+      - "5000:5000"
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:5000/health"]
+      # osrm-backend não tem curl nem wget — usa bash + /dev/tcp
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/5000' 2>/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 900s  # cobre primeiro boot com processamento (~10 min)
 
-  # ── Spin: geo-api ───────────────────────────────────────────────────────
+  # ── API Spin ──────────────────────────────────────────────────────────────
   geo-api:
     build: .
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
-      # Aponta para o serviço osrm acima (nome do serviço = hostname na rede Docker)
       SPIN_VARIABLE_OSRM_BASE: http://osrm:5000/route/v1/driving
     depends_on:
       osrm:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
-# ── Volume compartilhado entre osrm-prepare e osrm ─────────────────────────
 volumes:
   osrm-data:

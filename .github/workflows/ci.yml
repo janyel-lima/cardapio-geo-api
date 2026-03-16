@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # Evita que cargo tente atualizar o índice a cada job
+  CARGO_NET_RETRY: 10
+
+# Cancela runs anteriores do mesmo branch/PR — economiza minutos de CI
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── 1. Formato ──────────────────────────────────────────────────────────
+  fmt:
+    name: Format (rustfmt)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+  # ── 2. Linter ───────────────────────────────────────────────────────────
+  clippy:
+    name: Clippy (wasm32-wasip1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo clippy
+        # -D warnings trata qualquer aviso como erro — igual ao pre-commit hook
+        run: cargo clippy --target wasm32-wasip1 -- -D warnings
+
+  # ── 3. Testes unitários (nativo) ─────────────────────────────────────────
+  # Roda no host (x86_64), não precisa do runtime WASI.
+  # Testa bounds.rs e helpers.rs — lógica pura sem spin_sdk.
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo test
+        run: cargo test --lib -- --nocapture
+
+  # ── 4. Build WASM ────────────────────────────────────────────────────────
+  build:
+    name: Build (wasm32-wasip1 release)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip1
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo build --release
+        run: cargo build --target wasm32-wasip1 --release
+
+      # Guarda o .wasm para uso no job de deploy (evita rebuild)
+      - name: Upload wasm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cardapio-geo-api-wasm
+          path: target/wasm32-wasip1/release/cardapio_geo_api.wasm
+          retention-days: 7
+
+  # ── 5. Auditoria de segurança ────────────────────────────────────────────
+  audit:
+    name: Security Audit (cargo-audit)
+    runs-on: ubuntu-latest
+    # Roda em paralelo com os outros — não bloqueia o build.
+    # Se o deploy não precisar esperar o audit, remova o `needs` no job deploy.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── 6. Política de dependências ──────────────────────────────────────────
+  deny:
+    name: Dependency Policy (cargo-deny)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          # Verifica licenças, advisories, bans e sources
+          command: check
+          arguments: --all-features
