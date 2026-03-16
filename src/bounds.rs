@@ -6,7 +6,6 @@
 ///
 /// Formato Nominatim viewbox: min_lon,min_lat,max_lon,max_lat
 ///                            (oeste, sul,    leste,  norte)
-
 pub struct BBox {
     pub west: f64,
     pub south: f64,

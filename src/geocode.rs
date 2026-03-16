@@ -2,17 +2,15 @@
 ///
 /// Proxy para o Nominatim OSM com `viewbox` fixado em Alagoas.
 /// Retorna array compatível com Nominatim jsonv2.
-
 use anyhow::Context;
-use spin_sdk::http::{Method, Request, Response, send};
+use spin_sdk::http::{send, Method, Request, Response};
 
 use crate::bounds;
 use crate::errors::ApiError;
 use crate::helpers::{json_ok, parse_qs, require_str};
 
 /// User-Agent exigido pela política de uso do Nominatim.
-const USER_AGENT: &str =
-    "cardapio-geo-api/0.1 (https://github.com/seu-usuario/cardapio-geo-api)";
+const USER_AGENT: &str = "cardapio-geo-api/0.1 (https://github.com/seu-usuario/cardapio-geo-api)";
 
 pub async fn handle(query: &str) -> Result<Response, ApiError> {
     let qs = parse_qs(query);
@@ -27,8 +25,7 @@ pub async fn handle(query: &str) -> Result<Response, ApiError> {
         .get("limit")
         .and_then(|s| s.parse().ok())
         .unwrap_or(5)
-        .min(10)
-        .max(1);
+        .clamp(1, 10);
 
     // ── Monta URL do Nominatim ────────────────────────────────────────────
     let viewbox = bounds::ALAGOAS.as_viewbox();

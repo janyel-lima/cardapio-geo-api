@@ -172,10 +172,7 @@ mod tests {
 
     #[test]
     fn url_decode_mixed() {
-        assert_eq!(
-            url_decode("Rua+S%C3%A3o+Jo%C3%A3o"),
-            "Rua São João"
-        );
+        assert_eq!(url_decode("Rua+S%C3%A3o+Jo%C3%A3o"), "Rua São João");
     }
 
     #[test]

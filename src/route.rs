@@ -2,9 +2,8 @@
 ///
 /// Cálculo de rota via OSRM.
 /// A URL base é lida da variável Spin `osrm_base` (configurável em runtime).
-
 use anyhow::Context;
-use spin_sdk::http::{Method, Request, Response, send};
+use spin_sdk::http::{send, Method, Request, Response};
 use spin_sdk::variables;
 
 use crate::bounds;
@@ -20,10 +19,12 @@ pub async fn handle(query: &str) -> Result<Response, ApiError> {
         .map_err(ApiError::from)?;
 
     // ── Valida parâmetros ─────────────────────────────────────────────────
-    let from_lat = require_f64(&qs, "from_lat").map_err(|e| ApiError::bad_request(e.to_string()))?;
-    let from_lng = require_f64(&qs, "from_lng").map_err(|e| ApiError::bad_request(e.to_string()))?;
-    let to_lat   = require_f64(&qs, "to_lat").map_err(|e| ApiError::bad_request(e.to_string()))?;
-    let to_lng   = require_f64(&qs, "to_lng").map_err(|e| ApiError::bad_request(e.to_string()))?;
+    let from_lat =
+        require_f64(&qs, "from_lat").map_err(|e| ApiError::bad_request(e.to_string()))?;
+    let from_lng =
+        require_f64(&qs, "from_lng").map_err(|e| ApiError::bad_request(e.to_string()))?;
+    let to_lat = require_f64(&qs, "to_lat").map_err(|e| ApiError::bad_request(e.to_string()))?;
+    let to_lng = require_f64(&qs, "to_lng").map_err(|e| ApiError::bad_request(e.to_string()))?;
 
     // ── Valida região ─────────────────────────────────────────────────────
     let (_, from_ext) = bounds::classify(from_lat, from_lng);

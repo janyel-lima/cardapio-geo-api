@@ -8,7 +8,6 @@
 /// - `thiserror`: camada de biblioteca — erros tipados, matcháveis, testáveis.
 /// - `anyhow`: erros de infra dentro dos handlers (IO, parse) que chegam até
 ///   aqui via `#[from] anyhow::Error` e se tornam `ApiError::Internal`.
-
 use spin_sdk::http::Response;
 
 use crate::helpers::error_json;

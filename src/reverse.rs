@@ -2,25 +2,21 @@
 ///
 /// Reverse geocoding via Nominatim.
 /// Resposta: formato Nominatim padrão + `within_alagoas` + `within_region`.
-
 use anyhow::Context;
-use spin_sdk::http::{Method, Request, Response, send};
+use spin_sdk::http::{send, Method, Request, Response};
 
 use crate::bounds;
 use crate::errors::ApiError;
 use crate::helpers::{json_ok, parse_qs, require_f64};
 
-const USER_AGENT: &str =
-    "cardapio-geo-api/0.1 (https://github.com/seu-usuario/cardapio-geo-api)";
+const USER_AGENT: &str = "cardapio-geo-api/0.1 (https://github.com/seu-usuario/cardapio-geo-api)";
 
 pub async fn handle(query: &str) -> Result<Response, ApiError> {
     let qs = parse_qs(query);
 
     // ── Valida parâmetros ─────────────────────────────────────────────────
-    let lat = require_f64(&qs, "lat")
-        .map_err(|e| ApiError::bad_request(e.to_string()))?;
-    let lng = require_f64(&qs, "lng")
-        .map_err(|e| ApiError::bad_request(e.to_string()))?;
+    let lat = require_f64(&qs, "lat").map_err(|e| ApiError::bad_request(e.to_string()))?;
+    let lng = require_f64(&qs, "lng").map_err(|e| ApiError::bad_request(e.to_string()))?;
 
     // Rejeita coordenadas fora da região operacional antes de chamar o upstream.
     let (in_al, in_ext) = bounds::classify(lat, lng);
