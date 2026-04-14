@@ -8,12 +8,24 @@
   "customizations": {
     "vscode": {
       "extensions": [
-        "rust-lang.rust-analyzer",
-        "vadimcn.vscode-lldb",
-        "tamasfe.even-better-toml",
-        "serayuzgur.crates",
-        "usernamehw.errorlens",
-        "fill-labs.dependi"
+        // ── O Núcleo do Rust (Suas escolhas) ─────────────────────
+    "rust-lang.rust-analyzer",
+    "vadimcn.vscode-lldb",
+    "tamasfe.even-better-toml",
+    "serayuzgur.crates",
+    "usernamehw.errorlens",
+    "fill-labs.dependi",
+
+    // ── Ambiente de Subsistema e Versionamento ───────────────
+    "ms-vscode-remote.remote-wsl",
+    "eamodio.gitlens",
+
+    // ── Integração Contínua e Infraestrutura ─────────────────
+    "github.vscode-github-actions",
+
+    // ── Ferramentas de Compilação de Baixo Nível e Qualidade ─
+    "dtsvet.vscode-wasm",
+    "streetsidesoftware.code-spell-checker"
       ],
       "settings": {
         "rust-analyzer.cargo.target": "wasm32-wasip1",
